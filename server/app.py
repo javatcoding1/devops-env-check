@@ -25,8 +25,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from environment import DevOpsEnv, VALID_ACTIONS
-from tasks import get_task_ids, register_dynamic_task
+from env.environment import DevOpsEnv, VALID_ACTIONS
+from env.tasks import get_task_ids, register_dynamic_task
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -200,7 +200,7 @@ async def get_state():
 @app.post("/chat", response_model=ChatResponse, tags=["AI Agent"])
 async def chat_endpoint(body: ChatRequest):
     """LLM-powered diagnostic chat using current state and history."""
-    from inference import chat_diagnose
+    from agent.inference import chat_diagnose
 
     state = env.state()
     result = chat_diagnose(state, _actions_history, body.message)
@@ -247,7 +247,7 @@ async def auto_run(body: AutoRunRequest = AutoRunRequest()):
     Run the AI agent automatically step-by-step until the system is
     healthy or max steps are reached. Returns action + reasoning per step.
     """
-    from inference import get_action_with_reasoning
+    from agent.inference import get_action_with_reasoning
 
     global _actions_history
 
@@ -314,7 +314,7 @@ async def auto_run(body: AutoRunRequest = AutoRunRequest()):
 def run_server():
     """Entry point for pyproject.toml [project.scripts]."""
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=7860)
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
 
 
 if __name__ == "__main__":

@@ -22,9 +22,9 @@ import re
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from environment import DevOpsEnv, VALID_ACTIONS
-from graders import grade
-from tasks import get_task_ids
+from env.environment import DevOpsEnv, VALID_ACTIONS
+from env.graders import grade
+from env.tasks import get_task_ids
 
 # ---------------------------------------------------------------------------
 # Setup

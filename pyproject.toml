@@ -15,8 +15,12 @@ dependencies = [
 ]
 
 [project.scripts]
-server = "app:run_server"
+server = "server.app:run_server"
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["env*", "agent*", "server*"]

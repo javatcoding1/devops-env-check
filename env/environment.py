@@ -226,7 +226,7 @@ class DevOpsEnv:
 
     def reset(self, task_id: Optional[str] = None) -> Dict[str, Any]:
         """Reset the environment, optionally loading a specific task."""
-        from tasks import TASKS
+        from env.tasks import TASKS
 
         self._task_id = task_id or "easy"
         if self._task_id not in TASKS:

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from tasks import TASKS
+from env.tasks import TASKS
 
 
 # ---------------------------------------------------------------------------
