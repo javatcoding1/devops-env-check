@@ -9,13 +9,18 @@ import json
 import time
 import requests
 import streamlit as st
+from dotenv import load_dotenv
+import os
+
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-API_URL = "http://localhost:7860"
 
+load_dotenv()
+
+API_URL = os.getenv("API_URL") or st.secrets.get("API_URL")
 st.set_page_config(
     page_title="DevOps AI Agent Simulator",
     page_icon="🤖",
@@ -58,6 +63,8 @@ st.markdown("""
     .status-healthy { color: #00e676; }
     .status-degraded { color: #ffab00; }
     .status-down { color: #ff1744; }
+    .status-critical { color: #d50000; font-weight: 800; animation: blink 1.5s linear infinite; }
+    @keyframes blink { 50% { opacity: 0.3; } }
 
     .log-box {
         background: #0d1117;
@@ -180,7 +187,7 @@ def api_call(method: str, endpoint: str, data: dict = None) -> dict | list | Non
         r.raise_for_status()
         return r.json()
     except requests.exceptions.ConnectionError:
-        st.error("⚠️ Cannot connect to backend. Start it with: `uvicorn app:app --port 7860`")
+        st.error(f"⚠️ Cannot connect to backend at {API_URL}. Please ensure it is running.")
         return None
     except Exception as e:
         st.error(f"API Error: {e}")
@@ -188,7 +195,7 @@ def api_call(method: str, endpoint: str, data: dict = None) -> dict | list | Non
 
 
 def get_status_class(status: str) -> str:
-    return f"status-{status}" if status in ("healthy", "degraded", "down") else ""
+    return f"status-{status}" if status in ("healthy", "degraded", "down", "critical") else ""
 
 
 def get_cpu_color(cpu: int) -> str:
@@ -303,8 +310,7 @@ with st.sidebar:
             st.session_state.auto_run_result = None
 
     # Task selection
-    tasks_response = api_call("GET", "/tasks")
-    available_tasks = tasks_response if tasks_response else ["easy", "medium", "hard", "expert"]
+    available_tasks = ["easy", "medium", "hard", "expert"]
 
     st.markdown("### 📋 Select Task")
     task_choice = st.selectbox(
@@ -339,8 +345,6 @@ with st.sidebar:
                     st.session_state.episode_done = False
                     st.session_state.auto_run_result = None
                     st.toast(f"🎲 Generated new task: {tid}")
-                    # Switch selectbox to the new task by injecting it into session state
-                    st.session_state.task_choice_sb = tid
                     st.rerun()
 
     st.divider()
@@ -412,6 +416,9 @@ with cols[2]:
 
 with cols[3]:
     status = state["status"]
+    if status == "down" and st.session_state.get("task_choice_sb") == "expert":
+        status = "critical"
+    
     st.markdown(f"""
     <div class="metric-card">
         <div class="label">Status</div>
