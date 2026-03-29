@@ -159,6 +159,12 @@ class HealthResponse(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/", tags=["Meta"])
+async def root():
+    """Root endpoint returning basic API info."""
+    return {"message": "Welcome to DevOps Incident Response Environment API. See /docs for documentation"}
+
+
 @app.post("/reset", response_model=StateResponse, tags=["Environment"])
 async def reset_env(body: ResetRequest = ResetRequest()):
     """Reset the environment, optionally specifying a task."""
