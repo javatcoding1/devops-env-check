@@ -1,27 +1,15 @@
 name: devops-incident-response
-version: "1.0.0"
-description: "DevOps Incident Response Environment with AI-powered diagnosis"
+version: 1.0.0
+description: "A production-grade DevOps Incident Response simulation. Agents must diagnose hidden root causes (CPU overload, memory leaks, database issues, cache failures) from evolving system logs and metrics. Features failure propagation, multi-step action dependencies, and realistic reward signals."
 
-endpoints:
-  reset: /reset
-  step: /step
-  state: /state
-
-methods:
-  reset: POST
-  step: POST
-  state: GET
-
-actions:
-  type: discrete
-  values:
-    - restart_service:api
-    - restart_service:database
-    - scale_up:cpu
-    - optimize_database
-    - clear_cache
-    - check_logs
-    - do_nothing
+action:
+  type: object
+  properties:
+    action_str:
+      type: string
+      description: "One of: restart_service:api, restart_service:database, scale_up:cpu, optimize_database, clear_cache, check_logs, do_nothing"
+  required:
+    - action_str
 
 observation:
   type: object
@@ -29,14 +17,28 @@ observation:
     logs:
       type: string
     cpu_usage:
-      type: number
+      type: integer
     memory_usage:
-      type: number
+      type: integer
     db_latency:
       type: string
     services:
       type: array
+      items:
+        type: string
     status:
       type: string
     step_count:
+      type: integer
+    message:
+      type: string
+    reward:
       type: number
+    done:
+      type: boolean
+  required:
+    - logs
+    - cpu_usage
+    - memory_usage
+    - status
+    - done

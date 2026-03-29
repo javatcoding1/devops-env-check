@@ -492,10 +492,9 @@ with action_col:
                 if st.button(label, key=f"act_{action_id}", use_container_width=True, disabled=disabled):
                     result = api_call("POST", "/step", {"action": action_id})
                     if result:
-                        obs = result["observation"]
+                        obs = result
                         reward = result["reward"]
                         done = result["done"]
-                        info = result["info"]
 
                         st.session_state.state = obs
                         st.session_state.actions_taken.append(action_id)
@@ -506,7 +505,7 @@ with action_col:
                             "action": action_id,
                             "reward": reward,
                             "status": obs["status"],
-                            "message": info.get("message", ""),
+                            "message": obs.get("message", ""),
                         })
                         st.rerun()
 

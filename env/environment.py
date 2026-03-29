@@ -18,8 +18,12 @@ from __future__ import annotations
 import copy
 import json
 import random
+import uuid
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
+
+from openenv.core.env_server import Environment
+from env.models import DevOpsAction, DevOpsObservation, DevOpsState
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -210,21 +214,24 @@ HARMFUL_ACTIONS: Dict[str, List[str]] = {
 # Environment
 # ---------------------------------------------------------------------------
 
-class DevOpsEnv:
+class DevOpsEnv(Environment):
     """OpenEnv-compatible DevOps Incident Response Environment (v2)."""
 
     def __init__(self) -> None:
-        self._state: SystemState = SystemState()
+        super().__init__()
+        self._sys_state: SystemState = SystemState()
         self._hidden: HiddenState = HiddenState()
         self._task_id: Optional[str] = None
         self._done: bool = False
         self._actions_taken: List[str] = []
+        self._episode_id = str(uuid.uuid4())
+        self._score: float = 0.0
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def reset(self, task_id: Optional[str] = None) -> Dict[str, Any]:
+    def reset(self, task_id: Optional[str] = None) -> DevOpsObservation:
         """Reset the environment, optionally loading a specific task."""
         from env.tasks import TASKS
 
@@ -239,6 +246,7 @@ class DevOpsEnv:
         initial = task["initial_state"]
 
         self._state = SystemState.from_dict(copy.deepcopy(initial))
+        self._sys_state = self._state
         self._hidden = HiddenState(
             root_causes=copy.deepcopy(task["root_causes"]),
             resolved_causes=[],
@@ -249,50 +257,55 @@ class DevOpsEnv:
         )
         self._done = False
         self._actions_taken = []
+        self._episode_id = str(uuid.uuid4())
+        self._score = 0.0
 
-        return self._state.to_dict()
+        obs = DevOpsObservation(**self._sys_state.to_dict(), message="Environment reset")
+        obs.done = False
+        obs.reward = 0.0
+        return obs
 
-    def step(self, action: str) -> Tuple[Dict[str, Any], float, bool, Dict[str, Any]]:
-        """Execute *action* and return (observation, reward, done, info)."""
+    def step(self, action: DevOpsAction) -> DevOpsObservation:
+        """Execute *action* and return observation."""
         if self._done:
-            return (
-                self._state.to_dict(),
-                0.0,
-                True,
-                {"message": "Episode already finished. Call reset()."},
-            )
+            msg = "Episode already finished. Call reset()."
+            obs = DevOpsObservation(**self._sys_state.to_dict(), message=msg)
+            return obs
 
-        action = action.strip().lower()
-        if action not in VALID_ACTIONS:
-            return (
-                self._state.to_dict(),
-                -0.2,
-                False,
-                {"message": f"Invalid action '{action}'."},
-            )
+        action_str = action.action_str.strip().lower()
+        if action_str not in VALID_ACTIONS:
+            msg = f"Invalid action '{action_str}'."
+            obs = DevOpsObservation(**self._sys_state.to_dict(), message=msg)
+            return obs
 
-        self._state.step_count += 1
-        self._actions_taken.append(action)
+        self._sys_state.step_count += 1
+        self._actions_taken.append(action_str)
 
-        reward = self._apply_action(action)
+        reward = self._apply_action(action_str)
         self._evolve_state()             # dynamic state evolution each step
         reward += STEP_PENALTY            # per-step penalty
 
+        self._score += round(reward, 4)
+
         # Check termination
-        if self._state.status == "healthy":
+        if self._sys_state.status == "healthy":
             self._done = True
-            info = {"message": "System restored to healthy. Episode complete."}
-        elif self._state.step_count >= MAX_STEPS:
+            msg = "System restored to healthy. Episode complete."
+        elif self._sys_state.step_count >= MAX_STEPS:
             self._done = True
-            info = {"message": "Max steps reached. Episode terminated."}
+            msg = "Max steps reached. Episode terminated."
         else:
-            info = {"message": f"Action '{action}' applied."}
+            msg = f"Action '{action_str}' applied."
 
-        return self._state.to_dict(), round(reward, 4), self._done, info
+        obs = DevOpsObservation(**self._sys_state.to_dict(), message=msg)
+        obs.reward = round(reward, 4)
+        obs.done = self._done
+        return obs
 
-    def state(self) -> Dict[str, Any]:
-        """Return the current observation (hidden state is NOT included)."""
-        return self._state.to_dict()
+    @property
+    def state(self) -> DevOpsState:
+        """Return the episode state metadata."""
+        return DevOpsState(episode_id=self._episode_id, step_count=self._sys_state.step_count)
 
     @property
     def done(self) -> bool:

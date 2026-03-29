@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from env.environment import DevOpsEnv, VALID_ACTIONS
+from env.models import DevOpsAction
 from env.graders import grade
 from env.tasks import get_task_ids
 
@@ -492,24 +493,47 @@ def run_inference() -> dict:
 
         while not done:
             step += 1
-            action = get_action(obs, actions_history)
+            # Build state dict for get_action compatibility
+            state_dict = {
+                "status": obs.status,
+                "cpu_usage": obs.cpu_usage,
+                "memory_usage": obs.memory_usage,
+                "db_latency": obs.db_latency,
+                "services": obs.services,
+                "logs": obs.logs
+            }
+
+            action_str = get_action(state_dict, actions_history)
 
             # Hard stop on do_nothing when healthy
-            if action == "do_nothing" and obs.get("status") == "healthy":
+            if action_str == "do_nothing" and obs.status == "healthy":
                 print(f"  Step {step:>2}: ✅ System healthy. Stopping.")
                 break
 
-            print(f"  Step {step:>2}: action = {action}")
+            print(f"  Step {step:>2}: action = {action_str}")
 
-            obs, reward, done, info = env.step(action)
-            actions_history.append(action)
+            obs = env.step(DevOpsAction(action_str=action_str))
+            
+            reward = obs.reward or 0.0
+            done = obs.done or False
+            
+            actions_history.append(action_str)
             print(
-                f"           reward={reward:+.4f} | status={obs['status']}"
-                f" | cpu={obs['cpu_usage']}% mem={obs['memory_usage']}%"
-                f" db={obs['db_latency']} | {info['message']}"
+                f"           reward={reward:+.4f} | status={obs.status}"
+                f" | cpu={obs.cpu_usage}% mem={obs.memory_usage}%"
+                f" db={obs.db_latency} | {obs.message}"
             )
 
-        score = grade(task_id, env.actions_taken, obs)
+        # Grade uses actions_taken and final obs
+        final_obs_dict = {
+            "status": obs.status,
+            "cpu_usage": obs.cpu_usage,
+            "memory_usage": obs.memory_usage,
+            "db_latency": obs.db_latency,
+            "services": obs.services,
+            "logs": obs.logs
+        }
+        score = grade(task_id, env.actions_taken, final_obs_dict)
         results[task_id] = score
         print(f"\n  ✅ Score: {score:.4f}")
 
