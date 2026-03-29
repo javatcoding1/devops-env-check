@@ -1,35 +1,19 @@
 name: devops-incident-response
-description: >
-  A production-grade OpenEnv-compatible DevOps simulation (v3) with hidden
-  root causes, dynamic evolving logs, failure propagation, multi-step
-  action dependencies, dynamic task generation, LLM-powered chat,
-  and interactive Streamlit UI.
+version: "1.0.0"
 
-version: "3.0.0"
-author: DevOps AI Team
+endpoints:
+  reset: /reset
+  step: /step
+  state: /state
 
-# ── Environment Metadata ────────────────────────────────────────────────
+methods:
+  reset: POST
+  step: POST
+  state: GET
 
-environment:
-  type: sequential_decision
-  max_steps: 15
-  deterministic: true
-  reward_range: [-0.35, 1.0]
-  features:
-    - hidden_root_causes
-    - dynamic_log_evolution
-    - failure_propagation
-    - multi_step_dependencies
-    - state_evolution
-    - dynamic_task_generation
-    - llm_chat_diagnosis
-    - streamlit_ui
-
-# ── Action Space ────────────────────────────────────────────────────────
-
-action_space:
+actions:
   type: discrete
-  actions:
+  values:
     - restart_service:api
     - restart_service:database
     - scale_up:cpu
@@ -38,118 +22,16 @@ action_space:
     - check_logs
     - do_nothing
 
-# ── Observation Schema ──────────────────────────────────────────────────
-
-observation_space:
-  type: dict
-  schema:
+observation:
+  type: object
+  properties:
     logs:
       type: string
-      description: >
-        Evolving log messages. Checking logs reveals deeper root cause hints.
     cpu_usage:
-      type: integer
-      description: CPU utilisation percentage (0-100). Worsens if unresolved.
+      type: number
     memory_usage:
-      type: integer
-      description: Memory utilisation percentage (0-100). Indicates memory leaks.
+      type: number
     db_latency:
       type: string
-      enum: [low, medium, high]
-      description: Database query latency. May worsen without intervention.
-    services:
-      type: array
-      items:
-        type: string
-      description: Currently running services (api, database, cache).
     status:
       type: string
-      enum: [healthy, degraded, down]
-      description: Overall system health.
-    step_count:
-      type: integer
-      description: Steps taken in the current episode.
-
-# ── Hidden State ────────────────────────────────────────────────────────
-
-hidden_state:
-  description: >
-    Hidden root causes (cpu_overload, memory_leak, database_issue, cache_failure)
-    that the agent must infer from observable metrics and evolving logs.
-  root_causes:
-    - cpu_overload
-    - memory_leak
-    - database_issue
-    - cache_failure
-
-# ── Tasks ───────────────────────────────────────────────────────────────
-
-tasks:
-  static:
-    - id: easy
-      difficulty: easy
-      root_causes: [cpu_overload]
-    - id: medium
-      difficulty: medium
-      root_causes: [cpu_overload, database_issue]
-    - id: hard
-      difficulty: hard
-      root_causes: [memory_leak, database_issue, cache_failure]
-    - id: expert
-      difficulty: expert
-      root_causes: [cpu_overload, memory_leak, database_issue, cache_failure]
-  dynamic:
-    description: >
-      POST /generate to create randomised tasks with configurable difficulty and optional seed.
-
-# ── API Endpoints ───────────────────────────────────────────────────────
-
-endpoints:
-  reset:
-    method: POST
-    path: /reset
-    description: Reset environment. Pass {"task_id": "..."}.
-    response: observation
-
-  step:
-    method: POST
-    path: /step
-    description: Execute action → (observation, reward, done, info).
-    response: {observation, reward, done, info}
-
-  state:
-    method: GET
-    path: /state
-    response: observation
-
-  chat:
-    method: POST
-    path: /chat
-    description: LLM-powered diagnostic chat. Pass {"message": "..."}.
-    response: {diagnosis, reasoning, suggested_action}
-
-  generate:
-    method: POST
-    path: /generate
-    description: Generate and register a dynamic task.
-    response: {task_id, description, difficulty, root_causes}
-
-  health:
-    method: GET
-    path: /health
-
-  tasks:
-    method: GET
-    path: /tasks
-
-  actions:
-    method: GET
-    path: /actions
-
-# ── Deployment ──────────────────────────────────────────────────────────
-
-deployment:
-  runtime: docker
-  port: 7860
-  dockerfile: Dockerfile
-  healthcheck: /health
