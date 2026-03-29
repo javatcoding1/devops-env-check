@@ -42,3 +42,11 @@ observation:
     - memory_usage
     - status
     - done
+
+server:
+  entrypoint: "uvicorn server.app:app --host 0.0.0.0 --port 7860"
+  port: 7860
+
+agent:
+  entrypoint: "python inference.py"
+  inference: "inference.py"

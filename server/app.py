@@ -127,7 +127,7 @@ class HealthResponse(BaseModel):
 # Custom Endpoints (Preserved for UI and backwards compat)
 # ---------------------------------------------------------------------------
 
-@app.get("/health-check", response_model=HealthResponse, tags=["Meta"])
+@app.get("/health", response_model=HealthResponse, tags=["Meta"])
 async def health():
     return HealthResponse()
 
@@ -229,6 +229,16 @@ async def auto_run(body: AutoRunRequest = AutoRunRequest()):
 # ---------------------------------------------------------------------------
 # CLI entry point (for `uv run server` / `openenv` compatibility)
 # ---------------------------------------------------------------------------
+
+def main():
+    """CLI entrypoint for the OpenEnv server."""
+    import uvicorn
+    # Important: host 0.0.0.0 is used for multi-mode deployment
+    uvicorn.run(app, host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
 
 def run_server():
     import uvicorn
