@@ -1,270 +1,102 @@
-# 🚨 DevOps Incident Response Environment (v3)
+# 🤖 DevOps Incident Response Environment (v3.1)
 
-A **production-grade, OpenEnv-compatible** reinforcement learning environment that simulates real-world DevOps system failures with hidden root causes, dynamic logs, failure propagation, and an interactive Streamlit UI.
-
----
-
-## ✨ What's New in v3
-
-| Feature | Description |
-|---------|-------------|
-| 🎲 **Dynamic Task Generation** | Random task creation with `generate_task(difficulty, seed)` |
-| 💬 **AI Diagnostic Chat** | LLM-powered `/chat` endpoint for interactive debugging |
-| 🖥️ **Streamlit UI** | Full interactive web interface with metrics, actions, and chat |
-| ⚡ **Token Optimization** | 60% less token usage — truncated logs, recent-only history, max_tokens=50 |
-| 🛑 **Smart Stopping** | Auto-stop when system is healthy; no unnecessary actions |
-| 🔁 **Anti-Loop Guards** | Prevents 3× repeats, caps check_logs at 3, rule-based fallback |
-| 📈 **Failure Propagation** | Wrong actions degrade CPU, memory, and DB latency |
-| 🔗 **Multi-Step Chains** | memory_leak → clear_cache → restart_service:api |
+A **production-grade, OpenEnv-compliant** simulation platform for training and evaluating AI agents in SRE (Site Reliability Engineering) and DevOps roles. This environment models complex infrastructure failures, hidden root causes, and failure propagation using the `openenv-core` SDK.
 
 ---
 
-## 📐 Architecture
+## 📐 Deep Architecture & Technology Stack
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                 Streamlit UI (streamlit_app.py)               │
-│   Metrics Dashboard │ Action Buttons │ AI Chat │ Step Log     │
-├──────────────┬───────────────────────────────────────────────┤
-│              │         FastAPI Server (app.py)                │
-│              │                                                │
-│  POST /reset ──────► DevOpsEnv.reset(task_id)                │
-│  POST /step  ──────► DevOpsEnv.step(action)                  │
-│  GET  /state ──────► DevOpsEnv.state()                       │
-│  POST /chat  ──────► chat_diagnose(state, history, msg)      │
-│  POST /generate ───► register_dynamic_task(id, difficulty)   │
-│  GET  /health ─────► Liveness probe                          │
-│              │                                                │
-├──────────────┴───────────────────────────────────────────────┤
-│                  DevOpsEnv (environment.py)                    │
-│                                                                │
-│   SystemState (observable) ←→ HiddenState (root causes)       │
-│   LogGenerator (3-depth evolution)                             │
-│   Failure propagation │ State evolution │ Multi-step chains    │
-│                                                                │
-├────────────────┬────────────────────┬────────────────────────┤
-│  tasks.py      │   graders.py       │   inference.py          │
-│  Static tasks  │   5-component      │   Token-optimized       │
-│  + dynamic     │   scoring (0–1)    │   LLM agent + chat      │
-│  generation    │                    │   + anti-loop guards     │
-└────────────────┴────────────────────┴────────────────────────┘
-```
+### Core Technologies
+- **Logic**: Python 3.10+ using `dataclasses` and `Pydantic v2` for strict state modeling.
+- **Communication**: **FastAPI** with `openenv-core` scaffolding, providing an OpenAI-compatible interface.
+- **Data Models**: Typed `DevOpsAction`, `DevOpsObservation`, and `DevOpsState` ensuring 100% compliance with OpenEnv CLI validators.
+- **UI**: **Streamlit** with a custom CSS design system for real-time metric visualization.
+- **Agent**: Lightweight OpenAI-compatible client with **anti-loop safeguards** and **rule-based fallbacks**.
+
+### 🔍 Simulation Engine (The "Deep" Logic)
+The environment operates on a **Dual-State Model**:
+1.  **Observable State (`DevOpsObservation`)**: Metrics like CPU (%), Memory (%), DB Latency (Low/Med/High), and Service Status (True/False). 
+2.  **Hidden State (`SystemState`)**: The actual root cause (e.g., `memory_leak: true`, `query_lock: true`). The agent must infer these from "Check Logs" actions or metric patterns.
+
+#### 📈 Failure Propagation & Metric Evolution
+Metrics are not random; they evolve based on hidden failures:
+- **CPU Overload**: If `cpu > 80%`, DB Latency has a 30% chance to increase per step.
+- **Memory Leak**: If `memory > 85%`, the API service has a 50% chance to crash (`status=down`).
+- **Wrong Actions**: Executing `scale_up:cpu` when the issue is actually a `database_lock` will trigger a penalty and slightly increase memory usage as a "resource overhead" simulation.
+
+#### 📝 Dynamic Log Generator
+The `LogGenerator` uses a 3-depth evolution system:
+- **Baseline**: "Monitoring system active."
+- **Symptomatic**: "High latency detected on port 5432."
+- **Diagnostic**: "Internal Error: Table lock detected on 'orders' table. 15 processes waiting." (Only revealed after `check_logs` is called).
 
 ---
 
-## ⚡ Quick Start
+## 🎯 Task & Grader System
 
-### 1. Install
+### Difficulty Levels
+- **Easy**: Single failure (e.g., Service crash). Requires 1 action.
+- **Medium**: Metrics threshold failure (e.g., CPU high). Requires 2 actions.
+- **Hard**: Hidden root cause (e.g., Memory leak). Requires 2 actions and a restart.
+- **Expert**: Multi-failure chain (e.g., CPU high + DB Latency). Requires 4+ actions in correct sequence.
 
-```bash
-git clone <repo-url>
-cd devopsai
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-# Edit .env with your API key
-```
-
-### 3. Run API Server
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port 7860 --reload
-```
-
-### 4. Run Streamlit UI
-
-```bash
-# In a second terminal:
-streamlit run streamlit_app.py --server.port 8501
-```
-
-### 5. Run LLM Inference
-
-```bash
-python inference.py
-```
+### 📊 5-Component Deterministic Scoring
+Every episode is graded out of 1.0 based on:
+1.  **Outcome (35%)**: Was the system restored to `healthy`?
+2.  **Action Selection (25%)**: Did the agent use the *optimal* fix for the specific root cause?
+3.  **Efficiency (15%)**: Ratio of optimal steps vs. actual steps taken.
+4.  **Health Bonus (15%)**: Final status of CPU/Memory (lowest possible values are best).
+5.  **Diagnostic Bonus (10%)**: Did the agent call `check_logs` before attempting a fix?
 
 ---
 
-## 🖥️ Streamlit UI Guide
+## ⚡ Task-Oriented AI Agent (inference.py)
 
-The UI provides:
-
-- **📊 System State Panel** — Real-time CPU, memory, DB latency, status with color-coded metrics
-- **🎮 Action Panel** — Clickable action buttons (disabled after use to prevent repeats)
-- **📋 Step Log** — Color-coded history of every action and its reward
-- **💬 AI Chat** — Ask questions about the incident, get diagnosis + suggested action
-- **⚙️ Sidebar** — Task selection, random task generation, action history, and "How it works" guides
-
----
-
-## 🎮 Execution Modes
-
-### Manual Mode
-You control actions step-by-step. Choose which action to execute, observe the results, and decide the next move. Great for learning how the system works and understanding action dependencies.
-
-### AI Agent Mode
-The AI agent automatically diagnoses and resolves the system using the `/auto-run` endpoint. It uses structured reasoning (Intent → Dependencies → Failure Avoidance → Orchestration) to find the optimal fix sequence.
-
-```bash
-# Run agent automatically via API
-curl -X POST http://localhost:7860/auto-run \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "medium"}'
-```
-
-Response includes step-by-step execution log, final status, total steps, and total reward.
-
-Or click **▶️ Run AI Agent Automatically** in the Streamlit UI.
-
----
-
-## 🎲 Dynamic Task Generation
-
-Generate randomized tasks at runtime:
-
-```python
-from tasks import generate_task, register_dynamic_task
-
-# Generate without registering
-task = generate_task("hard", seed=42)
-
-# Generate and register for use with env.reset()
-register_dynamic_task("my_task", "medium", seed=123)
-```
-
-Or via API:
-
-```bash
-curl -X POST http://localhost:7860/generate \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "rng_1", "difficulty": "hard", "seed": 42}'
-```
-
----
-
-## 🎮 Action Space
-
-| Action | Description |
-|--------|-------------|
-| `restart_service:api` | Restart the API service |
-| `restart_service:database` | Restart the database service |
-| `scale_up:cpu` | Scale up CPU resources |
-| `optimize_database` | Optimise database queries/indexes |
-| `clear_cache` | Clear and rebuild the cache |
-| `check_logs` | Analyse system logs (reveals deeper info each time) |
-| `do_nothing` | Take no action |
-
----
-
-## 🎯 Reward Structure
-
-| Outcome | Reward |
-|---------|--------|
-| Fixes root cause | +1.0 |
-| Partial fix (multi-step chain) | +0.7 |
-| Investigation (check_logs) | +0.5 / +0.3 / +0.1 |
-| Wrong action | −0.2 to −0.35 |
-| Per-step penalty | −0.05 |
-| do_nothing while issues active | −0.1 |
-
----
-
-## 🛑 Stopping Logic
-
-The agent automatically stops when:
-- System status becomes `"healthy"` → returns `do_nothing`
-- Max steps (15) reached
-- Anti-loop guard triggers after 3× same action
-
----
-
-## ⚡ Token Optimization Strategy
-
-| Technique | Saving |
-|-----------|--------|
-| Truncated logs (last 200 chars) | ~40% fewer prompt tokens |
-| Recent actions only (last 5) | ~30% fewer history tokens |
-| Compact prompt format | ~50% vs verbose v2 prompt |
-| max_tokens=50 (response) | ~75% fewer completion tokens |
-| Hard stop on healthy | Eliminates unnecessary API calls |
-| Anti-loop guards | Prevents repeated wasted calls |
-
-**Total estimated savings: ~60% fewer tokens per episode vs v2.**
-
----
-
-## 📊 Grading
-
-5-component scoring:
-
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| Outcome | 35% | Was the system restored to healthy? |
-| Action Match | 25% | Did the agent use correct actions? |
-| Efficiency | 15% | Extra steps vs optimal? |
-| Health Metrics | 15% | Final CPU, memory, DB latency values |
-| Diagnostic Bonus | 10% | Did the agent investigate first? |
-
----
-
-## 🐳 Docker
-
-```bash
-docker build -t devops-incident-env .
-docker run -p 7860:7860 -p 8501:8501 devops-incident-env
-```
-
----
-
-## ☁️ Deploy to Hugging Face Spaces
-
-1. Create a **Docker** Space on [huggingface.co/spaces](https://huggingface.co/spaces)
-2. Push this repository:
-
-```bash
-git remote add space https://huggingface.co/spaces/<username>/devops-incident-env
-git push space main
-```
-
-3. Set secrets in Space Settings: `API_BASE_URL`, `MODEL_NAME`, `HF_TOKEN`
+The included agent uses a **Token-Optimized Reasoning Chain**:
+1.  **Intent**: Detect which metrics are hazardous.
+2.  **Dependencies**: Check if prerequisite actions (like `check_logs`) are done.
+3.  **Failure Avoidance**: Ensure the action hasn't been tried 3× repeatedly (Anti-loop).
+4.  **Orchestration**: Select the final action string.
 
 ---
 
 ## 📁 Project Structure
 
-```
+```text
 devopsai/
-├── environment.py      # Core RL environment (hidden root causes, dynamic logs)
-├── tasks.py            # Static + dynamic task generation
-├── graders.py          # 5-component deterministic scoring
-├── inference.py        # Token-optimized LLM agent + chat helper
-├── app.py              # FastAPI server (REST + chat + generate)
-├── streamlit_app.py    # Interactive Streamlit UI
-├── openenv.yaml        # OpenEnv specification
-├── Dockerfile          # Production container (FastAPI + Streamlit)
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment variable template
-└── README.md           # This file
+├── env/
+│   ├── environment.py   # Core simulation logic (Failure propagation, Step/Reset)
+│   ├── tasks.py         # Scenario definitions (Easy -> Expert)
+│   ├── models.py        # Pydantic models (Action, Observation, State)
+│   ├── graders.py       # Deterministic reward calculation
+│   └── client.py        # DevOpsEnvClient for remote API connection
+├── server/
+│   └── app.py           # FastAPI application (Powered by create_fastapi_app)
+├── agent/               # Legacy agent code (Archived)
+├── inference.py         # Root level baseline Agent & Diagnostic Script
+├── streamlit_app.py     # Interactive Web Dashboard
+├── openenv.yaml         # OpenEnv manifest for platform deployment
+├── pyproject.toml       # Build system and dependencies (openenv-core, fastapi, etc.)
+└── Dockerfile           # Multi-stage production container
 ```
 
 ---
 
-## 🔧 Configuration
+## 🚀 Deployment & Validation
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `API_BASE_URL` | OpenAI-compatible endpoint | `https://api.groq.com/openai/v1` |
-| `MODEL_NAME` | Model identifier | `llama3-8b-8192` |
-| `HF_TOKEN` | API key / bearer token | — |
+### 1. Local Testing
+```bash
+python inference.py
+```
+
+### 2. Platform Validation
+To prepare for submission to Hugging Face Spaces or the OpenEnv platform:
+```bash
+openenv validate  # Verifies pyproject.toml, openenv.yaml, and Dockerfile
+openenv push --repo-id your-name/devops-simulator
+```
 
 ---
 
 ## 📜 License
-
 MIT

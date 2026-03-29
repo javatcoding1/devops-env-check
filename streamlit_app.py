@@ -301,7 +301,8 @@ with st.sidebar:
         task_id = st.session_state.task_choice_sb
         result = api_call("POST", "/reset", {"task_id": task_id})
         if result:
-            st.session_state.state = result
+            # The SDK wraps the observation in a top-level key
+            st.session_state.state = result.get("observation", result)
             st.session_state.step_history = []
             st.session_state.actions_taken = []
             st.session_state.chat_history = []
@@ -337,7 +338,7 @@ with st.sidebar:
             if gen_result:
                 result = api_call("POST", "/reset", {"task_id": tid})
                 if result:
-                    st.session_state.state = result
+                    st.session_state.state = result.get("observation", result)
                     st.session_state.step_history = []
                     st.session_state.actions_taken = []
                     st.session_state.chat_history = []
@@ -363,12 +364,24 @@ with st.sidebar:
     # How AI Works
     st.markdown("### 🧠 How AI Works")
     st.markdown("""
-    1. **Analyzes** system state (CPU, memory, DB, logs)
-    2. **Identifies** likely root cause from patterns
-    3. **Selects** the best corrective action
-    4. **Executes** multi-step fix chains
-    5. **Learns** from feedback (rewards/penalties)
+    1. **Analyzes** system metrics and logs
+    2. **Infers** hidden root causes (Leaks/Locks)
+    3. **Executes** multi-step corrective chains
     """)
+
+    with st.expander("🛠️ Technical Deep Dive"):
+        st.markdown("""
+        **Tech Stack:**
+        - **Backend:** FastAPI + OpenEnv Core
+        - **Logic:** Pydantic v2 + Dataclasses
+        - **Agent:** OpenAI-compatible Reasoning Agent
+        - **UI:** Streamlit + Custom CSS
+
+        **Deep Logic:**
+        - **Dual-State Engine:** Metrics are driven by *hidden* variables (Leaks, Locks).
+        - **Failure Propagation:** High CPU increases DB Latency chance; High Memory triggers API crashes.
+        - **Deterministic Grader:** Scientific 5-component scoring (0.0 - 1.0).
+        """)
 
 
 # ---------------------------------------------------------------------------
@@ -492,9 +505,10 @@ with action_col:
                 if st.button(label, key=f"act_{action_id}", use_container_width=True, disabled=disabled):
                     result = api_call("POST", "/step", {"action": action_id})
                     if result:
-                        obs = result
-                        reward = result["reward"]
-                        done = result["done"]
+                        # SDK returns {"observation": {...}, "reward": ..., "done": ...}
+                        obs = result.get("observation", result)
+                        reward = result.get("reward", 0.0)
+                        done = result.get("done", False)
 
                         st.session_state.state = obs
                         st.session_state.actions_taken.append(action_id)
@@ -593,6 +607,9 @@ with agent_col1:
             step_container = st.container()
 
             with st.spinner("🤖 AI Agent is analyzing the system..."):
+                # Clear UI history for a fresh auto-run visualization
+                st.session_state.actions_taken = []
+                st.session_state.step_history = []
                 result = api_call("POST", "/auto-run")
 
             if result:
@@ -610,9 +627,18 @@ with agent_col1:
                     progress_placeholder.empty()
 
                 st.session_state.auto_run_result = result
-                final_state = api_call("GET", "/state")
-                if final_state:
-                    st.session_state.state = final_state
+                # Final observation is derived from the last step in result
+                if result.get("steps"):
+                    last = result["steps"][-1]
+                    st.session_state.state = {
+                        "status": last["status"],
+                        "cpu_usage": last["cpu_usage"],
+                        "memory_usage": last["memory_usage"],
+                        "db_latency": last["db_latency"],
+                        "services": st.session_state.state.get("services", ["api", "database", "cache"]), # Preserve services if possible or fetch
+                        "logs": st.session_state.state.get("logs", ""), # We don't have logs in AutoRunStepResult yet
+                        "step_count": last["step"],
+                    }
                 st.session_state.episode_done = True
                 for step_entry in result.get("steps", []):
                     st.session_state.actions_taken.append(step_entry["action"])

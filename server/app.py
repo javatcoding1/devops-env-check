@@ -31,9 +31,38 @@ env_instance = DevOpsEnv()
 # We use a lambda to return our singleton instance to keep custom endpoints in sync.
 app = create_fastapi_app(lambda: env_instance, DevOpsAction, DevOpsObservation)
 
-app.title = "DevOps Incident Response Environment"
-app.version = "3.1.0"
-app.description = "Production-grade OpenEnv simulation with hidden root causes."
+app.title = "DevOps Incident Response Environment (v3 / OpenEnv)"
+app.version = "3.1.1"
+app.description = """
+## 🤖 DevOps Incident Response (SRE) Simulation
+A production-grade, OpenEnv-compliant reinforcement learning environment for evaluating AI agents.
+
+### 📐 Technical Architecture
+This platform is built on the **openenv-core** SDK and utilizes a **Dual-State Model**:
+1.  **Observable State**: CPU (%), Memory (%), DB Latency, and Service Status (API/DB/Cache).
+2.  **Hidden Root Causes**: Memory leaks, database locks, and CPU scaling bottlenecks.
+
+### 🔍 Simulation Engine
+- **Failure Propagation**: Metrics evolve dynamically based on hidden failures. A memory leak (`memory > 85%`) increases the objective chance of a service crash.
+- **Multi-Step Chains**: Resolving 'Expert' tasks requires specific action sequences (e.g., investigating logs → clearing cache → restarting the API).
+- **Log Generator**: A 3-depth log system that only reveals the true 'Root Cause' message after the agent executes `check_logs`.
+
+### 📊 Scoring & Rewards
+Episodes are graded out of **1.0** via a deterministic 5-component scoring model:
+- **Outcome (35%)**: Reaching a 'healthy' status.
+- **Logic Match (25%)**: Using the correct corrective action for the specific hidden cause.
+- **Efficiency (15%)**: Minimizing unnecessary steps.
+- **Health Bonus (15%)**: Maximizing resource optimization.
+- **Diagnostic (10%)**: Rewarding log investigation before fixing.
+
+### 🎮 Available Actions
+- `restart_service:[api|database|cache]`
+- `scale_up:cpu`
+- `optimize_database`
+- `clear_cache`
+- `check_logs`
+- `do_nothing`
+"""
 
 app.add_middleware(
     CORSMiddleware,
@@ -137,6 +166,9 @@ async def auto_run(body: AutoRunRequest = AutoRunRequest()):
     from inference import get_action_with_reasoning
     global _actions_history
 
+    # Clear history for are fresh auto-run session
+    _actions_history = []
+
     if body.task_id is not None:
         try:
             env_instance.reset(task_id=body.task_id)
@@ -154,13 +186,19 @@ async def auto_run(body: AutoRunRequest = AutoRunRequest()):
         if current_state["status"] == "healthy":
             break
 
+        # Get AI action with reasoning
         result = get_action_with_reasoning(current_state, _actions_history)
         action = result["action"]
         reasoning = result["reasoning"]
 
-        if action == "do_nothing" and current_state["status"] == "healthy":
+        print(f"DEBUG [auto-run]: Step {len(steps)+1} - State: status={current_state['status']}, cpu={current_state['cpu_usage']}%, mem={current_state['memory_usage']}% - Action: {action}")
+
+        # Stop if agent decides do_nothing (even if status is not yet healthy)
+        if action == "do_nothing":
+            print(f"DEBUG [auto-run]: Agent suggested 'do_nothing'. Breaking loop.")
             break
 
+        # Execute step
         obs = env_instance.step(DevOpsAction(action_str=action))
         _actions_history.append(action)
         total_reward += obs.reward

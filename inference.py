@@ -239,19 +239,21 @@ def _select_fallback(
     if log_count < 3 and "check_logs" not in exclude:
         candidates.append("check_logs")
 
-    if s.get("cpu_usage", 0) > 70 and "scale_up:cpu" not in actions_taken:
-        candidates.append("scale_up:cpu")
+    if s.get("cpu_usage", 0) > 70:
+        # Re-try if still critically high, even if in history
+        if "scale_up:cpu" not in actions_taken or s.get("status") == "down":
+            candidates.append("scale_up:cpu")
 
-    if (
-        "cache" not in s.get("services", []) or s.get("memory_usage", 0) > 70
-    ) and "clear_cache" not in actions_taken:
-        candidates.append("clear_cache")
+    if (s.get("memory_usage", 0) > 70):
+        if "clear_cache" not in actions_taken or s.get("status") == "down":
+            candidates.append("clear_cache")
 
     if "clear_cache" in actions_taken and "restart_service:api" not in actions_taken:
         candidates.append("restart_service:api")
 
-    if s.get("db_latency", "low") in ("medium", "high") and "optimize_database" not in actions_taken:
-        candidates.append("optimize_database")
+    if s.get("db_latency", "low") in ("medium", "high"):
+        if "optimize_database" not in actions_taken or s.get("status") == "down":
+            candidates.append("optimize_database")
 
     if "optimize_database" in actions_taken and "restart_service:database" not in actions_taken:
         candidates.append("restart_service:database")
@@ -301,6 +303,11 @@ def _generate_fallback_reasoning(action: str, state: dict) -> str:
     mem = state.get("memory_usage", 0)
     db = state.get("db_latency", "low")
     status = state.get("status", "unknown")
+
+    if action == "do_nothing":
+        if status == "healthy":
+            return "System appears healthy. No further action required."
+        return f"Exhausted fallback options while system is {status.upper()}. Please investigate logs."
 
     if action == "check_logs" and status == "down":
         return f"System is DOWN (CPU={cpu}%, MEM={mem}%). Checking logs to understand the root cause before any fix."
