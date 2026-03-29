@@ -12,7 +12,12 @@ dependencies = [
     "pydantic",
     "python-dotenv",
     "requests",
-    "openenv-core"
+    "openenv-core",
+    "streamlit>=1.30.0,<2.0.0",
+    "stable-baselines3",
+    "gymnasium",
+    "shimmy",
+    "matplotlib"
 ]
 
 [project.scripts]
