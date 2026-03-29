@@ -305,3 +305,18 @@ async def auto_run(body: AutoRunRequest = AutoRunRequest()):
         total_steps=len(steps),
         total_reward=round(total_reward, 4),
     )
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point (for `uv run server` / `openenv` compatibility)
+# ---------------------------------------------------------------------------
+
+def run_server():
+    """Entry point for pyproject.toml [project.scripts]."""
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    run_server()
+

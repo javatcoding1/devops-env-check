@@ -1,5 +1,6 @@
 name: devops-incident-response
 version: "1.0.0"
+description: "DevOps Incident Response Environment with AI-powered diagnosis"
 
 endpoints:
   reset: /reset
@@ -33,5 +34,9 @@ observation:
       type: number
     db_latency:
       type: string
+    services:
+      type: array
     status:
       type: string
+    step_count:
+      type: number
