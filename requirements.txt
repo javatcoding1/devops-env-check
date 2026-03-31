@@ -8,14 +8,21 @@ pydantic-settings==2.7.0
 openai>=1.58.1,<2.0.0
 
 # ── openenv-core runtime deps ─────────────────────────────────────────────────
-# Installed with --no-deps in Dockerfile due to broken openai>=2.7.2 metadata.
-# All actual runtime imports satisfied explicitly here.
+openenv-core>=0.2.3
 typer>=0.9.0
 rich>=13.0.0
 pyyaml>=6.0
 huggingface_hub>=0.20.0
 fastmcp>=0.1.0
 
+# ── Training & RL Stack ───────────────────────────────────────────────────────
+gymnasium
+stable-baselines3
+shimmy
+matplotlib
+torch>=2.0.0
+
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1
 requests==2.32.3
+streamlit>=1.30.0,<2.0.0
