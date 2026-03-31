@@ -1,12 +1,11 @@
 # ── Core API stack ────────────────────────────────────────────────────────────
-fastapi==0.115.6
-uvicorn[standard]==0.32.1
-pydantic==2.10.3
-pydantic-settings==2.7.0
+fastapi>=0.115.6
+uvicorn[standard]>=0.32.1
+pydantic>=2.11.7
+pydantic-settings>=2.7.0
 
 # ── LLM client ────────────────────────────────────────────────────────────────
 # openenv-core 0.2.3 requires openai>=2.7.2.
-# Pinning to 2.x line for compatibility.
 openai>=2.7.2,<3.0.0
 
 # ── openenv-core runtime deps ─────────────────────────────────────────────────
