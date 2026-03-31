@@ -1,6 +1,6 @@
 from pydantic import Field
 from openenv.core.env_server import Action, Observation, State
-from typing import List
+from typing import List, Dict, Any, Optional
 
 class DevOpsAction(Action):
     """The action taken in the DevOps environment."""
@@ -16,6 +16,8 @@ class DevOpsObservation(Observation):
     status: str = "healthy"
     step_count: int = 0
     message: str = ""
+    info: Dict[str, Any] = Field(default_factory=dict)
+    debug: Optional[Dict[str, Any]] = None
 
 class DevOpsState(State):
     """Episode state tracking for DevOps environment."""

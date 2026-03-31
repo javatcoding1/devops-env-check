@@ -7,7 +7,7 @@ action:
   properties:
     action_str:
       type: string
-      description: "One of: restart_service:api, restart_service:database, scale_up:cpu, optimize_database, clear_cache, check_logs, do_nothing"
+      description: "One of: restart_service:api, restart_service:database, scale_up:cpu, optimize_database, clear_cache, check_logs, no_action"
   required:
     - action_str
 

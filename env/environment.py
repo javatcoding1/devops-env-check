@@ -22,6 +22,14 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    import gymnasium as gym
+    from gymnasium import spaces
+    import numpy as np
+    HAS_GYM = True
+except ImportError:
+    HAS_GYM = False
+
 from openenv.core.env_server import Environment
 from env.models import DevOpsAction, DevOpsObservation, DevOpsState
 
@@ -36,7 +44,7 @@ VALID_ACTIONS: List[str] = [
     "optimize_database",
     "clear_cache",
     "check_logs",
-    "do_nothing",
+    "no_action",
 ]
 
 MAX_STEPS = 15
@@ -89,6 +97,8 @@ class HiddenState:
     degradation_counter: int = 0  # accumulates from wrong actions
     wrong_action_streak: int = 0  # consecutive wrong actions
     partially_fixed: Dict[str, bool] = field(default_factory=dict)
+    total_correct_actions: int = 0
+    total_wrong_actions: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -101,68 +111,68 @@ class LogGenerator:
     # Initial (vague) logs per root cause
     INITIAL_LOGS: Dict[str, str] = {
         "cpu_overload": (
-            "WARN {ts} monitor: System performance degraded. "
-            "High resource consumption detected across multiple processes."
+            "[{ts}] [WARN] [kernel] high context switching detected. "
+            "System performance degraded due to task scheduler overhead."
         ),
         "memory_leak": (
-            "WARN {ts} monitor: System slowdown observed. "
-            "Unexpected latency spikes in application responses."
+            "[{ts}] [WARN] [runtime] GC pressure increasing. "
+            "Minor GC frequency above 5s threshold. Transient slowdown observed."
         ),
         "database_issue": (
-            "WARN {ts} db-proxy: Elevated query response times. "
-            "Connection pool utilization above normal thresholds."
+            "[{ts}] [WARN] [db-proxy] Elevated iowait on database volume. "
+            "Disk read latency spiking in application responses."
         ),
         "cache_failure": (
-            "WARN {ts} cache-layer: Intermittent cache misses detected. "
-            "Application fallback to direct database queries increasing."
+            "[{ts}] [WARN] [cache-layer] cache_miss_rate > 40%. "
+            "High eviction count detected in cache cluster metrics."
         ),
     }
 
     # After first check_logs — more specific hints
     DEPTH_1_LOGS: Dict[str, str] = {
         "cpu_overload": (
-            "INFO {ts} profiler: CPU utilization breakdown — "
-            "worker processes consuming 85%+ of available cores. "
-            "Context switches elevated. Possible CPU saturation."
+            "[{ts}] [INFO] [profiler] CPU profile analysis — "
+            "kernel kworker threads consuming 85%+ of available cycles. "
+            "Interrupt frequency spiking. Possible CPU saturation."
         ),
         "memory_leak": (
-            "INFO {ts} profiler: Memory usage trending upward — "
-            "heap allocations not being freed. RSS grew 200MB in last hour. "
-            "Suspect memory leak in application layer."
+            "[{ts}] [INFO] [profiler] Memory telemetry — "
+            "heap allocations trending upward. RSS grew 200MB in last hour. "
+            "Resident set size approaching container limits."
         ),
         "database_issue": (
-            "INFO {ts} db-proxy: Slow query log analysis — "
-            "full table scans on 'orders' and 'sessions' tables. "
-            "Missing indexes suspected. Lock contention observed."
+            "[{ts}] [INFO] [db-proxy] Slow query log — "
+            "sequential scans detected on 'orders' and 'sessions' tables. "
+            "Lock contention on buffer cache suspect."
         ),
         "cache_failure": (
-            "INFO {ts} cache-layer: Cache health check — "
-            "checksum mismatches on 12% of cached entries. "
-            "Eviction policy failing. Cache data may be corrupt."
+            "[{ts}] [INFO] [cache-layer] Cluster heartbeats — "
+            "checksum mismatches on 12% of cached keys. "
+            "Network timeout during SET operation. Cache layer unstable."
         ),
     }
 
     # After second check_logs — reveals root cause clearly
     DEPTH_2_LOGS: Dict[str, str] = {
         "cpu_overload": (
-            "CRITICAL {ts} diagnostics: ROOT CAUSE IDENTIFIED — "
-            "CPU overload confirmed. Runaway worker threads exhausting "
-            "all available CPU cores. Immediate scale-up required."
+            "[{ts}] [CRITICAL] [diagnostics] CPU throttling active. "
+            "cgroup CPU quota limits reached. Runaway worker threads "
+            "overflowing scheduler queue. Immediate resource expansion required."
         ),
         "memory_leak": (
-            "CRITICAL {ts} diagnostics: ROOT CAUSE IDENTIFIED — "
-            "Memory leak confirmed in request handler. Object finalizers "
-            "not releasing connections. Clear cache and restart service required."
+            "[{ts}] [CRITICAL] [diagnostics] Memory saturation reached. "
+            "OOM killer invoked on nearby processes. Heap object finalizers "
+            "not releasing handles. Full rebuild of process layer required."
         ),
         "database_issue": (
-            "CRITICAL {ts} diagnostics: ROOT CAUSE IDENTIFIED — "
-            "Database performance degradation from unoptimized queries "
-            "and stale connection pool. Optimize database and restart required."
+            "[{ts}] [CRITICAL] [diagnostics] DB index bloat confirmed. "
+            "Shared buffer cache hit rate < 60%. High I/O wait times. "
+            "Index maintenance and pool refresh required."
         ),
         "cache_failure": (
-            "CRITICAL {ts} diagnostics: ROOT CAUSE IDENTIFIED — "
-            "Cache corruption from concurrent write race condition. "
-            "Full cache clear and service restart required."
+            "[{ts}] [CRITICAL] [diagnostics] Cache segment corruption. "
+            "Concurrent write race condition detected. Multiple LRU list "
+            "segment faults. Flush and restart recommended."
         ),
     }
 
@@ -174,7 +184,7 @@ class LogGenerator:
         active = [rc for rc in root_causes if rc not in resolved]
 
         if not active:
-            return f"INFO {ts} monitor: All systems nominal. No active issues detected."
+            return f"[{ts}] [INFO] [monitor] All systems nominal. No active issues detected."
 
         parts = []
         for rc in active:
@@ -214,7 +224,7 @@ HARMFUL_ACTIONS: Dict[str, List[str]] = {
 # Environment
 # ---------------------------------------------------------------------------
 
-class DevOpsEnv(Environment):
+class DevOpsEnv(Environment, gym.Env if HAS_GYM else object):
     """OpenEnv-compatible DevOps Incident Response Environment (v2)."""
 
     def __init__(self) -> None:
@@ -226,14 +236,23 @@ class DevOpsEnv(Environment):
         self._actions_taken: List[str] = []
         self._episode_id = str(uuid.uuid4())
         self._score: float = 0.0
+        self._done_reward_given = False
+
+        if HAS_GYM:
+            self.action_space = spaces.Discrete(len(VALID_ACTIONS))
+            self.observation_space = spaces.Box(
+                low=0.0, high=200.0, shape=(4,), dtype=np.float32
+            )
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def reset(self, task_id: Optional[str] = None) -> DevOpsObservation:
+    def reset(self, task_id: Optional[str] = None, seed: int | None = None, options: dict | None = None) -> Any:
         """Reset the environment, optionally loading a specific task."""
-        from env.tasks import TASKS
+        if HAS_GYM:
+            super().reset(seed=seed)
+        from env.tasks import TASKS, get_task, get_task_ids
 
         self._task_id = task_id or "easy"
         if self._task_id not in TASKS:
@@ -242,7 +261,7 @@ class DevOpsEnv(Environment):
                 f"Available: {list(TASKS.keys())}"
             )
 
-        task = TASKS[self._task_id]
+        task = get_task(task_id)
         initial = task["initial_state"]
 
         self._state = SystemState.from_dict(copy.deepcopy(initial))
@@ -263,10 +282,44 @@ class DevOpsEnv(Environment):
         obs = DevOpsObservation(**self._sys_state.to_dict(), message="Environment reset")
         obs.done = False
         obs.reward = 0.0
+        obs.info = {
+            "total_correct_actions": self._hidden.total_correct_actions,
+            "total_wrong_actions": self._hidden.total_wrong_actions,
+            "total_actions": self._sys_state.step_count,
+        }
+        
+        if HAS_GYM:
+            return self._obs_to_numpy(obs), {"task_id": self._task_id}
         return obs
 
-    def step(self, action: DevOpsAction) -> DevOpsObservation:
-        """Execute *action* and return observation."""
+    def _obs_to_numpy(self, obs: DevOpsObservation) -> Any:
+        if not HAS_GYM: return None
+        latency_map = {"low": 0.0, "medium": 1.0, "high": 2.0}
+        return np.array([
+            float(obs.cpu_usage),
+            float(obs.memory_usage),
+            latency_map.get(obs.db_latency, 0.0),
+            float(obs.step_count)
+        ], dtype=np.float32)
+
+    def step(self, action: DevOpsAction | int) -> Any:
+        """Execute a step. Accepts either Typed DevOpsAction or Discrete ID from RL."""
+        if HAS_GYM and isinstance(action, (int, np.integer)):
+            action_str = VALID_ACTIONS[int(action)]
+            action_obj = DevOpsAction(action_str=action_str)
+        else:
+            action_obj = action
+
+        obs = self._step_internal(action_obj)
+
+        if HAS_GYM:
+            reward = obs.reward or 0.0
+            return self._obs_to_numpy(obs), reward, self._done, False, {"status": obs.status}
+        
+        return obs
+
+    def _step_internal(self, action: DevOpsAction) -> DevOpsObservation:
+        """Internal logic for step execution."""
         if self._done:
             msg = "Episode already finished. Call reset()."
             obs = DevOpsObservation(**self._sys_state.to_dict(), message=msg)
@@ -300,6 +353,22 @@ class DevOpsEnv(Environment):
         obs = DevOpsObservation(**self._sys_state.to_dict(), message=msg)
         obs.reward = round(reward, 4)
         obs.done = self._done
+        
+        # Inject tracking metrics
+        obs.info = {
+            "total_correct_actions": self._hidden.total_correct_actions,
+            "total_wrong_actions": self._hidden.total_wrong_actions,
+            "total_actions": self._sys_state.step_count,
+        }
+        
+        # Inject episode summary at the end
+        if self._done:
+            obs.info["episode_summary"] = {
+                "total_steps": self._sys_state.step_count,
+                "total_reward": self._score,
+                "final_status": self._sys_state.status
+            }
+            
         return obs
 
     @property
@@ -500,7 +569,7 @@ class DevOpsEnv(Environment):
                 )
 
         # ── DO NOTHING ─────────────────────────────────────────────
-        elif action == "do_nothing":
+        elif action == "no_action":
             # Inaction lets the system degrade further
             active_count = len(
                 [rc for rc in h.root_causes if rc not in h.resolved_causes]
@@ -513,12 +582,17 @@ class DevOpsEnv(Environment):
                     f"CPU now at {s.cpu_usage}%, memory at {s.memory_usage}%."
                 )
                 reward = -0.1
+                h.total_wrong_actions += 1
             else:
                 s.logs = "INFO monitor: System stable. No action needed."
                 reward = 0.0
+                h.total_correct_actions += 1
 
         # ── Update aggregate status ────────────────────────────────
         self._recompute_status()
+
+        if reward > 0.0:
+            h.total_correct_actions += 1
 
         return reward
 
@@ -529,6 +603,7 @@ class DevOpsEnv(Environment):
 
         h.wrong_action_streak += 1
         h.degradation_counter += 1
+        h.total_wrong_actions += 1
 
         # Failure propagation: wrong actions make things worse
         cpu_penalty = min(5, 2 * h.wrong_action_streak)
@@ -541,7 +616,7 @@ class DevOpsEnv(Environment):
             s.db_latency = "medium"
 
         s.logs = (
-            f"WARN monitor: {message} "
+            f"[{s.step_count}] [WARN] [monitor] {message} "
             f"System stress increased — CPU {s.cpu_usage}%, memory {s.memory_usage}%."
         )
 
@@ -590,12 +665,20 @@ class DevOpsEnv(Environment):
         # Count effective unresolved (partially fixed count as 0.5)
         effective_active = len(active) - (partially * 0.5)
 
-        if effective_active <= 0 and s.cpu_usage < 70 and s.memory_usage < 80:
+        # A system is ONLY healthy if:
+        # 1. No root causes remain unresolved
+        # 2. All 3 core services (api, database, cache) are UP
+        # 3. CPU usage is below 70% and Memory usage is below 80%
+        is_fully_resolved = (len(active) == 0)
+        has_all_services = (len(s.services) == 3)
+        metrics_nominal = (s.cpu_usage < 70 and s.memory_usage < 80)
+
+        if is_fully_resolved and has_all_services and metrics_nominal:
             s.status = "healthy"
-        elif effective_active <= 1 or (s.cpu_usage < 85 and s.memory_usage < 90):
-            s.status = "degraded"
-        else:
+        elif len(s.services) < 2 or s.cpu_usage >= 95 or s.memory_usage >= 95:
             s.status = "down"
+        else:
+            s.status = "degraded"
 
         # Override: if any critical metrics are extreme, force status
         if s.cpu_usage >= 95 or s.memory_usage >= 95:

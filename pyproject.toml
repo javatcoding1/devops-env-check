@@ -17,7 +17,13 @@ dependencies = [
     "stable-baselines3",
     "gymnasium",
     "shimmy",
-    "matplotlib"
+    "matplotlib",
+    "torch==2.3.1"
+]
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'"
 ]
 
 [project.scripts]
