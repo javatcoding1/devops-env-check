@@ -21,12 +21,6 @@ dependencies = [
     "torch>=2.0.0"
 ]
 
-[tool.uv]
-environments = [
-    "sys_platform == 'darwin'",
-    "sys_platform == 'linux'"
-]
-
 [project.scripts]
 server = "server.app:main"
 
