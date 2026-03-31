@@ -33,10 +33,10 @@ from typing import Any, Dict, List, Optional
 
 load_dotenv()
 
-API_URL = os.getenv("API_URL")
+API_URL = os.getenv("API_URL") or os.getenv("BACKEND_URL")
 if not API_URL:
     try:
-        API_URL = st.secrets.get("API_URL")
+        API_URL = st.secrets.get("API_URL") or st.secrets.get("BACKEND_URL")
     except Exception: # Catch StreamlitSecretNotFoundError and others
         API_URL = None
 

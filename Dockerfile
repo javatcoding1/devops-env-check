@@ -1,47 +1,38 @@
-FROM python:3.11-slim as builder
+FROM python:3.11-slim-bookworm
 
-# Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install dependencies in a virtualenv to keep the final image clean
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
 
-# Final stage
-FROM python:3.11-slim
+# Step 1: install openenv-core WITH its deps so nothing gets missed
+# (fastmcp, and any other undeclared-but-real imports all come in here)
+RUN pip install --upgrade pip && \
+    pip install openenv-core==0.2.3 || pip install --no-deps openenv-core==0.2.3
 
-WORKDIR /app
+# Step 2: install the rest of requirements.txt.
+# openai here will downgrade from whatever openenv-core tried to pull in
+# (its metadata says >=2.7.2 which doesn't exist) to the real 1.x line.
+# pip's --force-reinstall ensures our pin wins.
+RUN pip install -r requirements.txt --force-reinstall
 
-# Copy the virtualenv from the builder stage
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+COPY --chown=appuser:appuser . .
 
-# Copy project files
-COPY . .
+USER appuser
 
-# Expose only FastAPI port (Hugging Face Spaces requirement)
 EXPOSE 7860
 
-# Metadata
 LABEL maintainer="DevOps AI Team"
-LABEL version="4.0"
-LABEL description="Precision SRE AI Agent with Causal Priority Protocol"
+LABEL version="5.0"
+LABEL description="DevOps SRE AI Agent"
 
-# Health check (required for OpenEnv validation)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')" || exit 1
 
-# Run FastAPI server
 CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
