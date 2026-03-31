@@ -5,7 +5,9 @@ pydantic==2.10.3
 pydantic-settings==2.7.0
 
 # ── LLM client ────────────────────────────────────────────────────────────────
-openai>=1.58.1,<2.0.0
+# openenv-core 0.2.3 requires openai>=2.7.2.
+# Pinning to 2.x line for compatibility.
+openai>=2.7.2,<3.0.0
 
 # ── openenv-core runtime deps ─────────────────────────────────────────────────
 openenv-core>=0.2.3
